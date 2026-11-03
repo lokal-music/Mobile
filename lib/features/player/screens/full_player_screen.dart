@@ -877,34 +877,49 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 ),
               ),
             ),
-          if (_immersiveLyrics)
+          if (_spaceLayerMounted)
             Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _toggleImmersiveLyrics,
-                onLongPress: _showSpaceOptions,
-                child: const SizedBox.expand(),
+              child: SpaceStardustReveal(
+                progress: _spaceProgress,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: math.max(
+                        MediaQuery.paddingOf(context).bottom + 52,
+                        MediaQuery.sizeOf(context).height * .28,
+                      ),
+                      child: IgnorePointer(
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: _videoController.nativeNotifier,
+                          builder: (_, native, __) => native
+                              ? _spaceSubtitle(song)
+                              : const Text(
+                                  'Timed subtitles unavailable in video fallback',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          if (_immersiveLyrics)
-            Positioned(
-              left: 12, right: 12,
-              // Full-screen video has no seek row; keep its subtitle in the
-              // same elevated viewing band while respecting the safe area.
-              bottom: math.max(
-                MediaQuery.paddingOf(context).bottom + 52,
-                MediaQuery.sizeOf(context).height * .28,
-              ),
+          if (_spaceLayerMounted)
+            Positioned.fill(
               child: IgnorePointer(
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: _videoController.nativeNotifier,
-                  builder: (_, native, __) => native
-                      ? _spaceSubtitle(song)
-                      : const Text(
-                          'Timed subtitles unavailable in video fallback',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
+                ignoring: !_immersiveLyrics,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleImmersiveLyrics,
+                  onLongPress: _showSpaceOptions,
+                  child: const SizedBox.expand(),
                 ),
               ),
             ),
@@ -1171,32 +1186,46 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   ),
                 ),
                 ),
-                if (_immersiveLyrics)
+                if (_spaceLayerMounted)
                   Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleImmersiveLyrics,
-                      onLongPress: _showSpaceOptions,
-                      child: const SizedBox.expand(),
+                    child: SpaceStardustReveal(
+                      progress: _spaceProgress,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          SeekbarAlignedSpaceSubtitle(
+                            seekbarLink: _seekbarSubtitleLink,
+                            subtitle: _videoActive
+                                ? ValueListenableBuilder<bool>(
+                                    valueListenable: _videoController.nativeNotifier,
+                                    builder: (context, native, _) => native
+                                        ? _spaceSubtitle(song)
+                                        : const Text(
+                                            'Timed subtitles unavailable in embedded video fallback',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                  )
+                                : _spaceSubtitle(song),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                if (_immersiveLyrics)
-                  SeekbarAlignedSpaceSubtitle(
-                    seekbarLink: _seekbarSubtitleLink,
-                    subtitle: _videoActive
-                        ? ValueListenableBuilder<bool>(
-                            valueListenable: _videoController.nativeNotifier,
-                            builder: (context, native, _) => native
-                                ? _spaceSubtitle(song)
-                                : const Text(
-                                    'Timed subtitles unavailable in embedded video fallback',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white70, fontSize: 13,
-                                    ),
-                                  ),
-                          )
-                        : _spaceSubtitle(song),
+                if (_spaceLayerMounted)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: !_immersiveLyrics,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _toggleImmersiveLyrics,
+                        onLongPress: _showSpaceOptions,
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
                   ),
               ],
             ),
