@@ -593,7 +593,9 @@ class _RadioNowPlayingPageState extends ConsumerState<RadioNowPlayingPage>
               child: Transform.translate(
                 offset: Offset(0, MediaQuery.sizeOf(context).height * .3 *
                   (1 - Curves.easeOutCubic.transform(p))),
-                child: ColoredBox(
+                // Material paints ListTile selection and ink ripples
+                // above this background; ColoredBox hid the effects.
+                child: Material(
                   color: const Color(0xFF17161C),
                   child: SafeArea(child: Column(children: [
                     GestureDetector(
