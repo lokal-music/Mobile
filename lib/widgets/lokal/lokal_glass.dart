@@ -60,6 +60,7 @@ class LokalLens {
     this.dispersion = 0,
     this.fraction = 1,
     this.profile = LokalLensProfile.circular,
+    this.magnification = 0,
   });
 
   /// How far in from the edge the bending reaches, in logical pixels.
@@ -81,6 +82,10 @@ class LokalLens {
   /// Optical curve at the bezel; circular maintains the original effect.
   final LokalLensProfile profile;
 
+  /// Fractional zoom of the backdrop sampled through the flat lens center.
+  /// Zero preserves existing glass; foreground controls are never scaled.
+  final double magnification;
+
   static const none = LokalLens(height: 0, amount: 0);
 
   LokalLens scale(double t) => LokalLens(
@@ -90,6 +95,7 @@ class LokalLens {
     dispersion: dispersion,
     fraction: fraction,
     profile: profile,
+    magnification: magnification * t,
   );
 
   @override
@@ -100,10 +106,11 @@ class LokalLens {
       other.depth == depth &&
       other.dispersion == dispersion &&
       other.fraction == fraction &&
-      other.profile == profile;
+      other.profile == profile &&
+      other.magnification == magnification;
 
   @override
-  int get hashCode => Object.hash(height, amount, depth, dispersion, fraction, profile);
+  int get hashCode => Object.hash(height, amount, depth, dispersion, fraction, profile, magnification);
 }
 
 /// How much a [LokalGlass] hides what is behind it.
@@ -194,6 +201,8 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.fallbackTintOpacity,
+    this.fallbackBlurSigma,
     this.pronouncedRim = false,
     this.rimStrength = 1,
   });
@@ -210,6 +219,8 @@ class LokalGlass extends ConsumerWidget {
     this.lens,
     this.liquidTintOpacity,
     this.liquidBlurRadius,
+    this.fallbackTintOpacity,
+    this.fallbackBlurSigma,
     this.pronouncedRim = false,
     this.rimStrength = 1,
   }) : borderRadius = const BorderRadius.all(Radius.circular(999));
@@ -233,6 +244,11 @@ class LokalGlass extends ConsumerWidget {
 
   /// Clarity for the liquid shader alone; normal fallback retains frost.
   final double? liquidBlurRadius;
+
+  /// Overrides frost only when shader filtering is unsupported, not in
+  /// performance mode. Keeps the glass transparent across Android GPUs.
+  final double? fallbackTintOpacity;
+  final double? fallbackBlurSigma;
 
   /// Opt-in internal reflection and focused bright rim for floating chrome.
   final bool pronouncedRim;
@@ -259,7 +275,9 @@ class LokalGlass extends ConsumerWidget {
             final frost = light ? thickness.frostLight : thickness.frostDark;
             // Solid glass gets 20 % more opacity so text keeps its contrast
             // without the blur behind it.
-            alpha = solid ? (frost + .2).clamp(0.0, .96) : frost;
+            alpha = solid
+                ? (frost + .2).clamp(0.0, .96)
+                : (fallbackTintOpacity?.clamp(0.0, 1.0) ?? frost);
           }
           final base =
               tint ??
@@ -310,8 +328,8 @@ class LokalGlass extends ConsumerWidget {
             final filter = ui.ImageFilter.compose(
               outer: const ColorFilter.matrix(_vibrancyMatrix),
               inner: ui.ImageFilter.blur(
-                sigmaX: thickness.frostSigma,
-                sigmaY: thickness.frostSigma,
+                sigmaX: fallbackBlurSigma ?? thickness.frostSigma,
+                sigmaY: fallbackBlurSigma ?? thickness.frostSigma,
                 tileMode: TileMode.mirror,
               ),
             );
@@ -535,6 +553,7 @@ class RenderLokalLensBackdrop extends RenderProxyBox {
       _lens.depth,
       _lens.dispersion,
       _lens.profile == LokalLensProfile.squircle ? 1.0 : 0.0,
+      _lens.magnification,
     ];
     if (_filter == null || !listEquals(uniforms, _uniforms)) {
       final shader = _program.fragmentShader();
