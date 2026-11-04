@@ -43,22 +43,33 @@ void main() {
       // Mini player, navigation capsule and separate Search button.
       expect(glasses, hasLength(3));
       for (final glass in glasses) {
-        expect(glass.pronouncedRim, isTrue);
+        expect(glass.pronouncedRim, isFalse);
         expect(glass.lens?.profile, LokalLensProfile.squircle);
-        expect(glass.liquidBlurRadius, 1.5);
+        expect(glass.liquidBlurRadius, .8);
+        expect(glass.lens?.magnification, closeTo(.065, .0001));
+        expect(glass.fallbackBlurSigma, 2);
         expect(glass.liquidTintOpacity, closeTo(expectedOpacity, .001));
       }
     }
 
     await tester.pumpWidget(dock(collapsed: false));
     await tester.pump();
-    checkGlass(.20);
+    checkGlass(.09);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(dock(collapsed: true));
     await tester.pump();
-    checkGlass(.28);
+    checkGlass(.13);
     expect(tester.takeException(), isNull);
+  });
+
+  test('Home bubble has a restrained bounce but settles exactly', () {
+    expect(dockHomeBubbleScale(0), 1);
+    expect(dockHomeBubbleScale(.64), 1);
+    expect(dockHomeBubbleScale(1), 1);
+    expect(dockHomeBubbleScale(.72), greaterThan(1));
+    expect(dockHomeBubbleScale(.92), lessThan(1));
+    expect(dockHomeBubbleScale(.82), inInclusiveRange(.94, 1.06));
   });
 
   testWidgets('mini-player controls fade continuously into inline layout',
