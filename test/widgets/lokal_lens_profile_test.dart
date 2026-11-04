@@ -23,6 +23,18 @@ void main() {
       expect(scaled.profile, LokalLensProfile.squircle);
     });
 
+    test('magnification is opt-in and scales with the lens', () {
+      const old = LokalLens(height: 18, amount: 24);
+      const zoomed = LokalLens(
+        height: 18,
+        amount: 24,
+        magnification: .065,
+      );
+      expect(old.magnification, 0);
+      expect(zoomed.scale(.5).magnification, closeTo(.0325, .00001));
+      expect(old, isNot(zoomed));
+    });
+
     test('profile participates in identity and equality', () {
       const circular = LokalLens(height: 16, amount: 18);
       const squircle = LokalLens(
