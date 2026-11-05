@@ -75,18 +75,25 @@ List<ActiveSupportingVocal> activeSupportingVocals(
     if (standalone && !hasLead) continue;
     final text = standalone ? line.text : line.backgroundText;
     if (text?.trim().isNotEmpty != true) continue;
-    final words = standalone ? line.words : line.backgroundWords;
-    if (words == null || words.isEmpty) {
-      if (!standalone && i == focusedLineIndex) {
-        found.add(ActiveSupportingVocal(i, false));
-      }
+    // A supporting subline belongs visually to its lead for the lead's
+    // *entire* active interval. The word timestamps animate its highlight,
+    // not whether the text exists. Previously an attached subline appeared
+    // only during its ~5-second singing window and disappeared before/after,
+    // despite being present in LyricsData (e.g. 16 detected vocals).
+    if (!standalone && i == focusedLineIndex) {
+      found.add(ActiveSupportingVocal(i, false));
       continue;
     }
+    final words = standalone ? line.words : line.backgroundWords;
+    if (words == null || words.isEmpty) continue;
     final start = words.first.start;
     var end = words.last.end;
     if (end <= words.last.start) {
       end = words.last.start + const Duration(milliseconds: 500);
     }
+    // A voice from an *earlier* lead may remain beneath the current lead
+    // while it is actually overlapping; standalone [bg:] voices likewise
+    // enter at their own onset rather than taking focus as a lead line.
     if (position >= start && position < end) {
       found.add(ActiveSupportingVocal(i, standalone));
     }
@@ -567,7 +574,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                           for (final voice in backing)
                             Padding(
                               key: ValueKey(
-                                'active-bg-${voice.lineIndex}-${voice.standalone}',
+                                'supporting-vocal-subline-${voice.lineIndex}',
                               ),
                               padding: const EdgeInsets.only(
                                 left: 12, right: 12, top: 2, bottom: 5,
@@ -603,7 +610,7 @@ class _SyncedLyricsViewState extends ConsumerState<SyncedLyricsView> {
                                         fontSize: 16,
                                         height: 1.25,
                                         fontWeight: FontWeight.w600,
-                                        color: Colors.white.withValues(alpha: .78),
+                                        color: Colors.white.withValues(alpha: .65),
                                       ),
                                     ),
                             ),
