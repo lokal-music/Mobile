@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/features/player/widgets/karaoke_lyric_line.dart';
 import 'package:flick/features/player/widgets/synced_lyrics_view.dart';
+import 'package:flick/features/player/screens/full_player_screen.dart';
+import 'package:flick/features/player/widgets/flowing_background_vocal_subline.dart';
+import 'package:flick/features/player/widgets/lyric_motion_line.dart';
 import 'package:flick/providers/app_preferences_provider.dart';
 import 'package:flick/services/app_preferences_service.dart';
 import 'package:flick/services/lyrics_service.dart';
@@ -136,4 +139,48 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'real full-player FlowingLyrics paints the detected backing line below lead',
+    (tester) async {
+      // This is the renderer actually used by FullPlayerScreen, NOT
+      // SyncedLyricsView. The prior PRs only tested the latter.
+      final player = _FakePlayer();
+      player.positionNotifier.value =
+          const Duration(milliseconds: 289000);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 610,
+              child: flowingLyricsRendererForTest(
+                player: player,
+                lyrics: _realFileTimestamps,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 90));
+      final backing = find.byKey(const ValueKey('full-player-bg-0'));
+      expect(backing, findsOneWidget);
+      final subline = tester.widget<FlowingBackgroundVocalSubline>(backing);
+      expect(subline.vocal.text, 'Supporting vocal');
+      expect(subline.vocal.words!.single.start,
+          const Duration(milliseconds: 286325));
+      expect(subline.singing, isTrue);
+      final leadGlyph = find.byWidgetPredicate((widget) =>
+          widget is LyricMotionLine &&
+          widget.line.text == 'Lead 04:44.418');
+      final bgGlyph = find.byWidgetPredicate((widget) =>
+          widget is LyricMotionLine &&
+          widget.line.text == 'Supporting vocal');
+      expect(leadGlyph, findsOneWidget);
+      expect(bgGlyph, findsOneWidget);
+      expect(tester.getTopLeft(bgGlyph).dy,
+          greaterThan(tester.getTopLeft(leadGlyph).dy));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
 }
