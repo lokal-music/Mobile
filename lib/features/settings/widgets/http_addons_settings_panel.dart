@@ -259,7 +259,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
           ? old.settings[setting.key]!
           : setting.defaultValue,
     };
-    final newKeyController = TextEditingController();
+    var enteredKey = '';
     var removeSavedKey = false;
     final choices = await showDialog<Map<String, String>>(
       context: context,
@@ -274,7 +274,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
                 children: [
                   if (health.settings.isEmpty)
                     const Text('This add-on has no manifest options.'),
-                        for (final setting in health.settings)
+                  for (final setting in health.settings)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: DropdownButtonFormField<String>(
@@ -304,7 +304,7 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
                   const SizedBox(height: 12),
                   TextField(
                     key: ValueKey('http-addon-hmac-key-${old.id}'),
-                    controller: newKeyController,
+                    onChanged: (value) => enteredKey = value,
                     obscureText: true,
                     enableSuggestions: false,
                     autocorrect: false,
@@ -345,8 +345,6 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
         ),
       ),
     );
-    final enteredKey = newKeyController.text;
-    newKeyController.dispose();
     if (!mounted || choices == null) return;
     final latest = _settings;
     if (latest == null || index >= latest.addons.length ||
@@ -365,7 +363,11 @@ class _HttpAddonsSettingsPanelState extends State<HttpAddonsSettingsPanel> {
       manifestUrl: old.manifestUrl,
       label: label,
       token: old.token,
-      signingKey: removeSavedKey ? '' : enteredKey.isNotEmpty ? enteredKey : old.signingKey,
+      signingKey: removeSavedKey
+          ? ''
+          : enteredKey.isNotEmpty
+              ? enteredKey
+              : old.signingKey,
       settings: choices,
       enabled: old.enabled,
     );
