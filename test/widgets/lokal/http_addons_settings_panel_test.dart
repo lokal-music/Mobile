@@ -272,11 +272,14 @@ void main() {
       PlaybackSourcePriority.key: ['yt'],
     });
     final store = _MemoryStore(const DiscoverySettings());
-    final client = MockClient((request) async => http.Response(jsonEncode({
+    final client = MockClient((request) async {
+      expect(request.headers['X-LW-Sign'], isNotNull);
+      return http.Response(jsonEncode({
       'id': 'signed-fixture',
       'name': 'Fixture',
       'resources': ['search', 'stream'],
-    }), 200, headers: {'content-type': 'application/json'}));
+    }), 200, headers: {'content-type': 'application/json'});
+    });
     addTearDown(client.close);
     await tester.pumpWidget(_host(HttpAddonsSettingsPanel(store: store, client: client)));
     await tester.pumpAndSettle();
