@@ -106,6 +106,7 @@ jobs:
           test/features/player/lyrics_search_sheet_test.dart
           test/services/lyrics_flac_vorbis_reader_test.dart
           test/features/player/supporting_vocal_visibility_test.dart
+          test/features/player/bg_subline_widget_test.dart
           test/features/player/immersive_lyrics_stage_test.dart
           test/classipod test/services test/providers test/core test/data
           test/widgets/lokal test/features/appearance/lokal_frame_bottleneck_test.dart
