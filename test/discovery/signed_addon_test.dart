@@ -36,6 +36,7 @@ void main() {
       isEmpty,
     );
     expect(signedAddonHeaders(url, signingKey: ''), isEmpty);
+    expect(signedAddonHeaders(url), isEmpty);
   });
 
   test('signed manifest, search, stream and download preserve token path', () async {
