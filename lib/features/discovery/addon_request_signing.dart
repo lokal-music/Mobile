@@ -4,10 +4,7 @@ import 'package:crypto/crypto.dart';
 
 /// Optional HMAC signing for token-bearing add-on API endpoints.
 /// A signing key is never bundled with Lokal; unsigned add-ons are unaffected.
-const defaultAddonSigningKey = String.fromEnvironment(
-  'HTTP_ADDON_SIGNING_KEY',
-  defaultValue: '',
-);
+const defaultAddonSigningKey = '';
 
 Map<String, String> signedAddonHeaders(
   Uri url, {

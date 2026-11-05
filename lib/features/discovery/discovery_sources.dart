@@ -548,7 +548,7 @@ class DiscoveryAddon {
     this.configId,
     this.displayName = 'Music addon',
     this.settings = const {},
-    this.signingKey = defaultAddonSigningKey,
+    this.signingKey = '',
   }) : base = normalizeAddonEndpoint(endpoint),
        _token = token.trim() {
     if (_token.length > 4096 || RegExp(r'[\x00-\x20\x7f]').hasMatch(_token)) {
