@@ -95,6 +95,11 @@ void main() {
     final bg = tester.widget<LyricMotionLine>(bgGlyph);
     expect(lead.style.fontSize, 31);
     expect(bg.style.fontSize, 18);
+    // Verify the actual painter's data, not merely the original fixture.
+    expect(bg.line.words!.single.start,
+        const Duration(milliseconds: 286325));
+    expect(bg.line.words!.single.end,
+        const Duration(milliseconds: 291269));
     expect(tester.getTopLeft(bgGlyph).dy,
         greaterThan(tester.getTopLeft(leadGlyph).dy));
     expect(tester.takeException(), isNull);
