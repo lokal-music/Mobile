@@ -2,17 +2,16 @@ import 'dart:convert';
 
 import 'package:flick/features/discovery/discovery_http.dart';
 import 'package:flick/features/discovery/discovery_sources.dart';
-import 'package:flick/features/discovery/lastwave_signing.dart';
+import 'package:flick/features/discovery/addon_request_signing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
-  test('LastWave signature matches the published path-only HMAC vectors', () {
-    const secret =
-        '36d96a751b12ee481c281a8a8e64c482d0c1634a22061ab72f40175017818b85';
+  test('Signed add-on signature matches the published path-only HMAC vectors', () {
+    const secret = 'unit-test-only-key';
     final url = Uri.parse('https://addons.example/a/abc123/search?q=kesariya');
-    final signed = lastWaveHeaders(
+    final signed = signedAddonHeaders(
       url,
       intent: 'stream',
       epochSeconds: 1700000000,
@@ -22,10 +21,10 @@ void main() {
     expect(signed['X-LW-Intent'], 'stream');
     expect(
       signed['X-LW-Sign'],
-      'cc90954e083bd632ba915ba56f748f3b44320fc063ee8b69a8880406f1317adb',
+      '3220ec1fd8252e8b39b7a297d6537be4454e1f29a5d5ed31c976a39ead91e83d',
     );
     expect(
-      lastWaveHeaders(
+      signedAddonHeaders(
         Uri.parse('https://addons.example/a/abc123/search?q=other'),
         epochSeconds: 1700000000,
         signingKey: secret,
@@ -33,9 +32,10 @@ void main() {
       signed['X-LW-Sign'],
     );
     expect(
-      lastWaveHeaders(Uri.parse('https://addons.example/search')),
+      signedAddonHeaders(Uri.parse('https://addons.example/search')),
       isEmpty,
     );
+    expect(signedAddonHeaders(url, signingKey: ''), isEmpty);
   });
 
   test('signed manifest, search, stream and download preserve token path', () async {
@@ -45,8 +45,8 @@ void main() {
       final path = request.url.path;
       if (path.endsWith('/manifest.json')) {
         return http.Response(jsonEncode({
-          'id': 'lastwave-fixture',
-          'name': 'LastWave Test',
+          'id': 'addon-fixture',
+          'name': 'Signed add-on Test',
           'resources': ['search', 'stream'],
         }), 200);
       }
@@ -69,13 +69,14 @@ void main() {
     final addon = DiscoveryAddon(
       DiscoveryHttp(client),
       endpoint: 'https://addons.example/a/abc123',
-      configId: 'lastwave',
+      configId: 'addon-fixture',
+      signingKey: 'unit-test-only-key',
       exactManifestUrl:
           Uri.parse('https://addons.example/a/abc123/manifest.json'),
     );
 
     final health = await addon.health();
-    expect(health.name, 'LastWave Test');
+    expect(health.name, 'Signed add-on Test');
     final tracks = await addon.search('Track');
     expect(tracks, hasLength(1));
     final playback = await addon.resolve(tracks.single);
@@ -103,7 +104,7 @@ void main() {
     }
   });
 
-  test('ordinary add-ons do not get LastWave signature headers', () async {
+  test('ordinary add-ons do not get Signed add-on signature headers', () async {
     final client = MockClient((request) async {
       expect(request.headers['X-LW-Sign'], isNull);
       expect(request.headers['X-LW-TS'], isNull);

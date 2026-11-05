@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import 'discovery_http.dart';
 import 'discovery_models.dart';
-import 'lastwave_signing.dart';
+import 'addon_request_signing.dart';
 
 class YoutubeMusicCatalog {
   YoutubeMusicCatalog(this.http, {this.refreshClientContext = false});
@@ -548,6 +548,7 @@ class DiscoveryAddon {
     this.configId,
     this.displayName = 'Music addon',
     this.settings = const {},
+    this.signingKey = defaultAddonSigningKey,
   }) : base = normalizeAddonEndpoint(endpoint),
        _token = token.trim() {
     if (_token.length > 4096 || RegExp(r'[\x00-\x20\x7f]').hasMatch(_token)) {
@@ -564,6 +565,7 @@ class DiscoveryAddon {
   final String? configId;
   final String displayName;
   final Map<String, String> settings;
+  final String signingKey;
 
   /// A provider may use a custom quality value with an explicitly Atmos-
   /// labeled option. Inspect that manifest label only if the selected ID is
@@ -620,7 +622,7 @@ class DiscoveryAddon {
       url,
       headers: {
         if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
-        ...lastWaveHeaders(url, intent: intent),
+        ...signedAddonHeaders(url, intent: intent, signingKey: signingKey),
       },
       cancel: cancel,
     );
@@ -649,7 +651,7 @@ class DiscoveryAddon {
             exactManifestUrl,
             headers: {
               if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
-              ...lastWaveHeaders(exactManifestUrl),
+              ...signedAddonHeaders(exactManifestUrl, signingKey: signingKey),
             },
             cancel: cancel,
           );
@@ -694,7 +696,7 @@ class DiscoveryAddon {
       cancel: cancel,
       intent: 'stream',
     );
-    // LastWave-compatible providers may nest their catalogue in "data".
+    // HTTP add-on providers may nest their catalogue in "data".
     final nested = json['data'];
     final rows = json['tracks'] ??
         (nested is Map ? nested['tracks'] : null) ??
@@ -839,7 +841,7 @@ class DiscoveryAddon {
     Map<String, dynamic> json, {
     Duration? expectedDuration,
   }) {
-    // LastWave may return the same stream at top level and inside "data".
+    // An add-on may return the same stream at top level and inside "data".
     // Check security-sensitive flags on both layers before merging them.
     final nested = json['data'];
     if (nested is Map<String, dynamic>) {
