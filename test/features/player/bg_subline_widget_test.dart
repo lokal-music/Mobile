@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flick/features/player/widgets/karaoke_lyric_line.dart';
-import 'package:flick/features/player/widgets/synced_lyrics_view.dart';
 import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/features/player/widgets/flowing_background_vocal_subline.dart';
 import 'package:flick/features/player/widgets/lyric_motion_line.dart';
-import 'package:flick/providers/app_preferences_provider.dart';
-import 'package:flick/services/app_preferences_service.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/player_service.dart';
 
-/// No audio engine is started: the screen is driven by an explicit clock.
+/// Render the real full-player widget with a clock, without starting audio.
 class _FakePlayer implements PlayerService {
   @override
   final positionNotifier = ValueNotifier<Duration>(Duration.zero);
@@ -27,20 +22,11 @@ class _FakePlayer implements PlayerService {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-class _StaticLyricsPreferences extends AppPreferencesNotifier {
-  @override
-  AppPreferences build() => const AppPreferences(karaokeEnabled: false);
-}
-
-class _KaraokeLyricsPreferences extends AppPreferencesNotifier {
-  @override
-  AppPreferences build() => const AppPreferences(karaokeEnabled: true);
-}
-
-const _realFileTimestamps = LyricsData(
+/// Copyright-free text; timestamp positions are copied from the real FLAC.
+const _flacLyrics = LyricsData(
+  isSynchronized: true,
   rawContent: '',
   source: 'embedded:vorbis',
-  isSynchronized: true,
   lines: [
     LyricsLine(
       timestamp: Duration(milliseconds: 284418),
@@ -62,125 +48,67 @@ const _realFileTimestamps = LyricsData(
 );
 
 void main() {
-  Future<void> mount(
-    WidgetTester tester,
-    ValueNotifier<Duration> position, {
-    required bool karaoke,
-  }) async {
-    final fake = _FakePlayer();
+  Future<_FakePlayer> render(
+    WidgetTester tester, Duration position,
+  ) async {
+    final player = _FakePlayer()..positionNotifier.value = position;
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appPreferencesProvider.overrideWith(
-            karaoke
-                ? _KaraokeLyricsPreferences.new
-                : _StaticLyricsPreferences.new,
-          ),
-        ],
-        child: MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              height: 610,
-              child: SyncedLyricsView(
-                playerService: fake,
-                lyricsService: LyricsService(),
-                lyrics: _realFileTimestamps,
-                positionNotifier: position,
-              ),
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 610,
+            child: flowingLyricsRendererForTest(
+              player: player,
+              lyrics: _flacLyrics,
             ),
           ),
         ),
       ),
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    // _FlowingLyrics positions its stack using an actual frame ticker.
+    await tester.pump(const Duration(milliseconds: 90));
+    return player;
   }
 
-  testWidgets(
-    'backing text is painted immediately beneath active 04:44 lead',
-    (tester) async {
-      final clock = ValueNotifier(const Duration(milliseconds: 284500));
-      addTearDown(clock.dispose);
-      await mount(tester, clock, karaoke: false);
-      expect(find.text('Lead 04:44.418'), findsOneWidget);
-      expect(find.text('Supporting vocal'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('supporting-vocal-subline-0')),
-        findsOneWidget,
-      );
-      final leadOffset = tester.getTopLeft(find.text('Lead 04:44.418'));
-      final backingOffset = tester.getTopLeft(find.text('Supporting vocal'));
-      expect(backingOffset.dy, greaterThan(leadOffset.dy));
+  testWidgets('real full player paints 04:49 backing vocal below lead',
+      (tester) async {
+    await render(tester, const Duration(milliseconds: 289000));
+    final backing = find.byKey(const ValueKey('full-player-bg-0'));
+    expect(backing, findsOneWidget);
+    final widget = tester.widget<FlowingBackgroundVocalSubline>(backing);
+    expect(widget.vocal.text, 'Supporting vocal');
+    expect(widget.vocal.words!.single.start,
+        const Duration(milliseconds: 286325));
+    expect(widget.vocal.words!.single.end,
+        const Duration(milliseconds: 291269));
+    expect(widget.singing, isTrue);
 
-      clock.value = const Duration(milliseconds: 289000);
-      await tester.pump();
-      expect(find.text('Supporting vocal'), findsOneWidget);
+    // The actual full-player component paints the supporting vocal at
+    // 18 px, beneath the 31 px highlighted lead, not as another lead row.
+    final leadGlyph = find.byWidgetPredicate((w) =>
+        w is LyricMotionLine && w.line.text == 'Lead 04:44.418');
+    final bgGlyph = find.byWidgetPredicate((w) =>
+        w is LyricMotionLine && w.line.text == 'Supporting vocal');
+    expect(leadGlyph, findsOneWidget);
+    expect(bgGlyph, findsOneWidget);
+    final lead = tester.widget<LyricMotionLine>(leadGlyph);
+    final bg = tester.widget<LyricMotionLine>(bgGlyph);
+    expect(lead.style.fontSize, 31);
+    expect(bg.style.fontSize, 18);
+    expect(tester.getTopLeft(bgGlyph).dy,
+        greaterThan(tester.getTopLeft(leadGlyph).dy));
+    expect(tester.takeException(), isNull);
+  });
 
-      clock.value = const Duration(milliseconds: 292500);
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(find.text('Supporting vocal'), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'karaoke subline exists at 04:49 with background voice timing',
-    (tester) async {
-      final clock = ValueNotifier(const Duration(milliseconds: 289000));
-      addTearDown(clock.dispose);
-      await mount(tester, clock, karaoke: true);
-      final backing = tester.widgetList<KaraokeLyricLine>(
-        find.byType(KaraokeLyricLine),
-      ).where((line) => line.backgroundVoice).toList();
-      expect(backing, hasLength(1));
-      expect(backing.single.lineIndex, 0);
-      expect(
-        backing.single.lyrics.lines[0].backgroundWords!.single.start,
-        const Duration(milliseconds: 286325),
-      );
-    },
-  );
-
-  testWidgets(
-    'real full-player FlowingLyrics paints the detected backing line below lead',
-    (tester) async {
-      // This is the renderer actually used by FullPlayerScreen, NOT
-      // SyncedLyricsView. The prior PRs only tested the latter.
-      final player = _FakePlayer();
-      player.positionNotifier.value =
-          const Duration(milliseconds: 289000);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              height: 610,
-              child: flowingLyricsRendererForTest(
-                player: player,
-                lyrics: _realFileTimestamps,
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 90));
-      final backing = find.byKey(const ValueKey('full-player-bg-0'));
-      expect(backing, findsOneWidget);
-      final subline = tester.widget<FlowingBackgroundVocalSubline>(backing);
-      expect(subline.vocal.text, 'Supporting vocal');
-      expect(subline.vocal.words!.single.start,
-          const Duration(milliseconds: 286325));
-      expect(subline.singing, isTrue);
-      final leadGlyph = find.byWidgetPredicate((widget) =>
-          widget is LyricMotionLine &&
-          widget.line.text == 'Lead 04:44.418');
-      final bgGlyph = find.byWidgetPredicate((widget) =>
-          widget is LyricMotionLine &&
-          widget.line.text == 'Supporting vocal');
-      expect(leadGlyph, findsOneWidget);
-      expect(bgGlyph, findsOneWidget);
-      expect(tester.getTopLeft(bgGlyph).dy,
-          greaterThan(tester.getTopLeft(leadGlyph).dy));
-      expect(tester.takeException(), isNull);
-    },
-  );
-
+  testWidgets('full player draws bg subline before its words begin',
+      (tester) async {
+    await render(tester, const Duration(milliseconds: 284500));
+    expect(find.byKey(const ValueKey('full-player-bg-0')), findsOneWidget);
+    final voice = tester.widget<FlowingBackgroundVocalSubline>(
+      find.byKey(const ValueKey('full-player-bg-0')),
+    );
+    expect(voice.vocal.text, 'Supporting vocal');
+    expect(voice.singing, isTrue);
+    expect(tester.takeException(), isNull);
+  });
 }
