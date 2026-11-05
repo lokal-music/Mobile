@@ -879,11 +879,13 @@ class DiscoveryAddon {
         'Use a signed media URL; custom media headers are not supported.',
       );
     }
-    final url = discoveryText(
-      json['url'] ?? json['directUrl'] ?? json['streamUrl'] ??
-          json['downloadUrl'] ?? json['mediaUrl'],
-      maxLength: 8192,
-    );
+    String? url;
+    for (final field in const [
+      'url', 'directUrl', 'streamUrl', 'downloadUrl', 'mediaUrl',
+    ]) {
+      url = discoveryText(json[field], maxLength: 8192);
+      if (url != null) break;
+    }
     if (url == null) {
       throw const DiscoveryException('The addon returned no playable URL.');
     }
