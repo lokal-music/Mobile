@@ -2611,6 +2611,13 @@ class _MetadataDot extends StatelessWidget {
 /// * The active line sweeps word by word (real word timing when the lyrics
 ///   have it, untimed sources keep line-level focus).
 /// * Drag to browse (auto-follow resumes after 3 s), tap a line to seek.
+/// Exposes the exact main-player lyrics renderer to widget regression tests.
+/// Unlike SyncedLyricsView, this is the implementation the full player uses.
+Widget flowingLyricsRendererForTest({
+  required PlayerService player,
+  required LyricsData lyrics,
+}) => _FlowingLyrics(player: player, lyrics: lyrics);
+
 class _FlowingLyrics extends StatefulWidget {
   final PlayerService player;
   final LyricsData lyrics;
