@@ -46,7 +46,7 @@ void main() {
       if (path.endsWith('/manifest.json')) {
         return http.Response(jsonEncode({
           'id': 'addon-fixture',
-          'name': 'Signed add-on Test',
+          'name': 'Signed add-on fixture',
           'resources': ['search', 'stream'],
         }), 200);
       }
@@ -76,7 +76,7 @@ void main() {
     );
 
     final health = await addon.health();
-    expect(health.name, 'Signed add-on Test');
+    expect(health.name, 'Signed add-on fixture');
     final tracks = await addon.search('Track');
     expect(tracks, hasLength(1));
     final playback = await addon.resolve(tracks.single);
@@ -104,7 +104,7 @@ void main() {
     }
   });
 
-  test('ordinary add-ons do not get Signed add-on signature headers', () async {
+  test('ordinary add-ons do not receive signing headers', () async {
     final client = MockClient((request) async {
       expect(request.headers['X-LW-Sign'], isNull);
       expect(request.headers['X-LW-TS'], isNull);
