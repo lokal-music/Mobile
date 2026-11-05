@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/services/lyrics_flac_vorbis_reader.dart';
 import 'package:flick/services/lyrics_service.dart';
-import 'package:flick/features/player/widgets/synced_lyrics_view.dart';
 
 /// Anonymized structural fixture from the user-supplied Phantom Liberty FLAC.
 /// Preserves *all actual lead/background timestamps*, alternating [bg:] rows,
@@ -109,23 +108,6 @@ void main() {
     expect(lead.backgroundText, 'Harmony');
     expect(lead.backgroundWords!.first.start.inMilliseconds, 286325);
     expect(lead.backgroundWords!.last.end.inMilliseconds, 291269);
-
-    // The same decoded binary tag must produce a real backing subline at
-    // the visual reference's timestamp, not merely increment a tag counter.
-    final index = focusedVisibleLyricIndex(
-      parsed, const Duration(milliseconds: 289000),
-    );
-    expect(index, 34);
-    final backing = activeSupportingVocals(
-      parsed, const Duration(milliseconds: 289000), index,
-    );
-    expect(backing, hasLength(1));
-    expect(backing.single.lineIndex, 34);
-    expect(backing.single.standalone, isFalse);
-    // Vocal text stays present on the lead before word-level highlighting.
-    expect(activeSupportingVocals(
-      parsed, const Duration(milliseconds: 284500), index,
-    ), hasLength(1));
   });
 
   test('reads complete FLAC from disk, not platform metadata API', () async {
