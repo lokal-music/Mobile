@@ -34,6 +34,7 @@ import '../widgets/artwork_mesh_blur_backdrop.dart';
 import '../widgets/lyric_motion_line.dart';
 import '../widgets/lyrics_subline_timing.dart';
 import '../widgets/flowing_lyric_subline.dart';
+import '../widgets/flowing_background_vocal_subline.dart';
 import '../widgets/immersive_lyrics_stage.dart';
 import '../widgets/space_cover_bloom_reveal.dart';
 import '../widgets/material_player_thumb.dart';
@@ -2662,6 +2663,10 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
   // The parser keeps start-only enhanced-LRC words for lossless editing.
   // Resolve their end windows once for painting; never do it on each tick.
   late List<LyricsLine> _playbackLines;
+  // The main full-player renderer previously discarded every background
+  // field: it painted only the lead and translation. Prepare each independently
+  // timed supporting voice once, using the real parsed FLAC data.
+  List<LyricsLine?> _timedBackgrounds = const [];
   // Project translations/romaji exactly once per source change, never during
   // the frame-driven scroll/reveal loop. Null means line-only or plain lyrics.
   List<LyricsLine?> _timedSublines = const [];
@@ -2669,6 +2674,9 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
 
   void _prepareLyrics() {
     _playbackLines = LyricsService().playbackLines(widget.lyrics);
+    _timedBackgrounds = [
+      for (final line in _playbackLines) flowingBackgroundLine(line),
+    ];
     _timedSublines = [
       for (final line in _playbackLines)
         if (line.words?.isNotEmpty == true &&
@@ -2683,7 +2691,8 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
   ];
 
   List<double> _heights = const [];
-  List<double> _baseHeights = const [], _subHeights = const [];
+  List<double> _baseHeights = const [], _subHeights = const [],
+      _bgHeights = const [];
   final _subText = <int, String>{};
   double _sublineReveal = 0;
   LyricsData? _layoutLyrics;
@@ -2794,7 +2803,7 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     }
     _w = w;
     _h = h;
-    final hs = <double>[], subs = <double>[];
+    final hs = <double>[], subs = <double>[], backingHeights = <double>[];
     for (var i = 0; i < _lines.length; i++) {
       final l = _lines[i];
       double lh;
@@ -2820,11 +2829,20 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           sp.dispose();
         }
       }
+      final backing = i < _timedBackgrounds.length
+          ? _timedBackgrounds[i] : null;
+      final bh = backing == null
+          ? 0.0
+          : _subGap + LyricMotionLine.height(
+              context, backing.text, _sub, math.max(w, 40),
+            );
       hs.add(lh);
       subs.add(sh);
+      backingHeights.add(bh);
     }
     _baseHeights = hs;
     _subHeights = subs;
+    _bgHeights = backingHeights;
     _layoutLyrics = widget.lyrics;
     _layoutScaler = MediaQuery.textScalerOf(context);
     _layoutLocale = Localizations.maybeLocaleOf(context);
@@ -2837,7 +2855,11 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
     final tops = <double>[], heights = <double>[];
     for (var i = 0; i < _baseHeights.length; i++) {
       tops.add(y);
-      final height = _baseHeights[i] + _subHeights[i] * _sublineReveal;
+      // Backing vocals reserve real layout height regardless of the separate
+      // translation reveal animation. Their text must never be clipped away
+      // by the translation toggle, which defaults to off.
+      final height = _baseHeights[i] + _bgHeights[i] +
+          _subHeights[i] * _sublineReveal;
       heights.add(height);
       y += height + _gap;
     }
@@ -2942,16 +2964,40 @@ class _FlowingLyricsState extends State<_FlowingLyrics>
           );
 
     final sub = _translationOf(l);
+    final backing = i < _timedBackgrounds.length
+        ? _timedBackgrounds[i] : null;
+    final backingSinging = backing != null &&
+        (i == _active ||
+            (backing.words?.any((word) =>
+                word.start.inMilliseconds <= _posMs &&
+                _posMs < word.end.inMilliseconds) ?? false));
     Widget child = Transform.scale(
       alignment: Alignment.centerLeft,
       scale: scale,
-      child: sub == null
+      child: sub == null && backing == null
           ? text
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 text,
-                ClipRect(
+                if (backing != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: _subGap),
+                    child: FlowingBackgroundVocalSubline(
+                      key: ValueKey('full-player-bg-$i'),
+                      vocal: backing,
+                      position: Duration(milliseconds: _posMs),
+                      singing: backingSinging,
+                      lightweight: _ultra,
+                      style: _sub.copyWith(
+                        color: Colors.white.withValues(
+                          alpha: i == _active ? .86 : op * .75,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (sub != null)
+                  ClipRect(
                   child: Align(
                     alignment: Alignment.topLeft,
                     heightFactor: _sublineReveal,
