@@ -239,6 +239,8 @@ class LokalGlass extends ConsumerWidget {
     this.suspendBackdrop = false,
     this.fallbackTintOpacity,
     this.fallbackBlurSigma,
+    this.backdropBlurSigma,
+    this.performanceTintOpacity,
     this.pronouncedRim = false,
     this.rimStrength = 1,
   });
@@ -260,6 +262,8 @@ class LokalGlass extends ConsumerWidget {
     this.suspendBackdrop = false,
     this.fallbackTintOpacity,
     this.fallbackBlurSigma,
+    this.backdropBlurSigma,
+    this.performanceTintOpacity,
     this.pronouncedRim = false,
     this.rimStrength = 1,
   }) : borderRadius = const BorderRadius.all(Radius.circular(999));
@@ -306,6 +310,16 @@ class LokalGlass extends ConsumerWidget {
   final double? fallbackTintOpacity;
   final double? fallbackBlurSigma;
 
+  /// An ordinary backdrop Gaussian blur that stays active even in Performance
+  /// Mode. Used only by the dock's small, shared glass surfaces; no additional
+  /// fragment shader is involved. Replaces the fallback frost rather than
+  /// stacking two Gaussian backdrop passes.
+  final double? backdropBlurSigma;
+
+  /// Optional translucent fill when Performance Mode uses [backdropBlurSigma].
+  /// Other glass keeps its original solid, more opaque fallback.
+  final double? performanceTintOpacity;
+
   /// Opt-in internal reflection and focused bright rim for floating chrome.
   final bool pronouncedRim;
   final double rimStrength;
@@ -318,6 +332,17 @@ class LokalGlass extends ConsumerWidget {
   // as stutter while its dimensions change. The optical shader still updates
   // for moving geometry; its blur/vibrancy input is constant and shareable.
   static final _liquidFilterCache = <double, ui.ImageFilter>{};
+  static final _frostFilterCache = <double, ui.ImageFilter>{};
+
+  static ui.ImageFilter _sharedFrostFilter(double sigma) =>
+      _frostFilterCache.putIfAbsent(
+        sigma,
+        () => ui.ImageFilter.blur(
+          sigmaX: sigma,
+          sigmaY: sigma,
+          tileMode: TileMode.mirror,
+        ),
+      );
 
   static ui.ImageFilter _liquidInnerFilter(double sigma) {
     if (_liquidFilterCache.length > 48) _liquidFilterCache.clear();
@@ -346,6 +371,8 @@ class LokalGlass extends ConsumerWidget {
           final lensReady = !solid && program != null;
           final liquid = lensReady && !suspendBackdrop && !staticSurface;
           final light = t.isLight;
+          final extraFrost = (backdropBlurSigma ?? 0) > 0 &&
+              !suspendBackdrop && !staticSurface;
           final double alpha;
           if (lensReady) {
             alpha = liquidTintOpacity?.clamp(0.0, 1.0) ?? thickness.tint;
@@ -354,7 +381,10 @@ class LokalGlass extends ConsumerWidget {
             // Solid glass gets 20 % more opacity so text keeps its contrast
             // without the blur behind it.
             alpha = solid
-                ? (frost + .2).clamp(0.0, .96)
+                ? (extraFrost
+                    ? (performanceTintOpacity?.clamp(0.0, 1.0) ??
+                        (frost + .2).clamp(0.0, .96))
+                    : (frost + .2).clamp(0.0, .96))
                 : (fallbackTintOpacity?.clamp(0.0, 1.0) ?? frost);
           }
           final base =
@@ -397,7 +427,8 @@ class LokalGlass extends ConsumerWidget {
                     ),
               child: surface,
             );
-          } else if (!solid && !suspendBackdrop && !staticSurface) {
+          } else if (!solid && !suspendBackdrop && !staticSurface &&
+              !extraFrost) {
             final filter = ui.ImageFilter.compose(
               outer: const ColorFilter.matrix(_vibrancyMatrix),
               inner: ui.ImageFilter.blur(
@@ -406,6 +437,17 @@ class LokalGlass extends ConsumerWidget {
                 tileMode: TileMode.mirror,
               ),
             );
+            surface = grouped
+                ? BackdropFilter.grouped(filter: filter, child: surface)
+                : BackdropFilter(filter: filter, child: surface);
+          }
+
+          // Keep the footer frosted in Full and Performance Mode alike.
+          // The three disjoint capsules share a backdrop read through their
+          // existing BackdropGroup. Place this behind icons/text, and do not
+          // add another refractive lens or any shader.
+          if (extraFrost) {
+            final filter = _sharedFrostFilter(backdropBlurSigma!);
             surface = grouped
                 ? BackdropFilter.grouped(filter: filter, child: surface)
                 : BackdropFilter(filter: filter, child: surface);
