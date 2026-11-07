@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:flick/models/song.dart';
 import 'package:flick/services/app_preferences_service.dart';
@@ -10,6 +11,17 @@ import 'package:flick/services/lyrics_service.dart';
 class LyricsPlaybackPrefetch {
   LyricsPlaybackPrefetch._();
   static final instance = LyricsPlaybackPrefetch._();
+
+  /// A streamed desktop track's saved lyrics may arrive *after* the player
+  /// initially displayed a local miss; notify open lyric panels to refresh.
+  final ValueNotifier<String?> linkedLyricsUpdated = ValueNotifier(null);
+
+  void desktopLyricsArrived(Song song) {
+    invalidate(song);
+    // Force a fresh event even if the same desktop song receives new lyrics.
+    linkedLyricsUpdated.value = null;
+    linkedLyricsUpdated.value = song.id;
+  }
 
   final LyricsService _service = LyricsService();
   final _local = <String, Future<LyricsData?>>{};
@@ -37,8 +49,9 @@ class LyricsPlaybackPrefetch {
       final fetched = await _service.loadLyricsForSong(
         song, fetchOnline: true,
       ).catchError((Object _) => null);
-      return lyricQualityRank(fetched) > lyricQualityRank(own)
+      final best = lyricQualityRank(fetched) > lyricQualityRank(own)
           ? fetched : own ?? fetched;
+      return LyricsService.mergeSupportingVocals(best, [own, fetched]);
     });
     while (_local.length > maxEntries) {
       final stale = _local.keys.first;
@@ -69,8 +82,11 @@ class LyricsPlaybackPrefetch {
   }
 }
 
-int lyricQualityRank(LyricsData? data) => data == null
+int lyricQualityRank(LyricsData? data) => data == null ||
+        !data.lines.any((line) =>
+            line.voice != 'bg' && line.text.trim().isNotEmpty)
     ? 0
-    : data.lines.any((line) => line.words?.isNotEmpty == true)
+    : data.lines.any((line) =>
+            line.voice != 'bg' && line.words?.isNotEmpty == true)
         ? 3
         : data.isSynchronized ? 2 : 1;

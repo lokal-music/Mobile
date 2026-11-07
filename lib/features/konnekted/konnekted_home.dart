@@ -1,11 +1,15 @@
 import 'package:flick/features/flow/flow_screen.dart';
 import 'package:flick/l10n/l10n.dart';
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/features/konnekted/lokal_home_greeting.dart';
 import 'package:flick/features/konnekted/lokal_mixes.dart';
+import 'package:flick/features/konnekted/library/lokal_library_kit.dart';
+import 'package:flick/features/konnekted/library/lokal_song_browser.dart';
+import 'package:flick/features/konnekted/library/lokal_navigation.dart';
 import 'package:flick/features/settings/lokal/lokal_settings_group.dart';
 import 'package:flick/features/songs/widgets/song_actions_bottom_sheet.dart';
 import 'package:flick/models/song.dart';
@@ -198,7 +202,7 @@ class _KonnektedHomeState extends ConsumerState<KonnektedHome> {
 }
 
 /// Home's top bar: the Lokal logo and glass buttons floating over content.
-class KonnektedHomeTopBar extends StatelessWidget {
+class KonnektedHomeTopBar extends ConsumerWidget {
   const KonnektedHomeTopBar({
     super.key,
     required this.onSettings,
@@ -224,7 +228,10 @@ class KonnektedHomeTopBar extends StatelessWidget {
   final DateTime? now;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showGreeting = ref.watch(
+      lokalAppearanceProvider.select((look) => look.showHomeGreeting),
+    );
     final at = now ?? DateTime.now();
     return Padding(
       padding: konnektedTopBarPadding,
@@ -264,36 +271,38 @@ class KonnektedHomeTopBar extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          // Desktop's greeting: a salutation, then a line from your listening.
-          Semantics(
-            header: true,
-            child: Text(
-              lokalText(
-                (greeting ?? lokalHomeMessages(const [], now: at)).headline,
-              ),
-              style: TextStyle(
-                fontSize: context.responsiveText(34),
-                fontWeight: FontWeight.w600,
-                letterSpacing: -.7,
-                color: context.lokal.text,
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: Text(
-              lokalText(
-                (greeting ?? lokalHomeMessages(const [], now: at)).subheader,
-              ),
-              key: ValueKey(greeting),
-              style: TextStyle(
-                fontSize: context.responsiveText(15),
-                color: context.lokal.muted,
+          if (showGreeting) ...[
+            const SizedBox(height: 14),
+            // Desktop's greeting: a salutation, then a line from your listening.
+            Semantics(
+              header: true,
+              child: Text(
+                lokalText(
+                  (greeting ?? lokalHomeMessages(const [], now: at)).headline,
+                ),
+                style: TextStyle(
+                  fontSize: context.responsiveText(34),
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -.7,
+                  color: context.lokal.text,
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 2),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: Text(
+                lokalText(
+                  (greeting ?? lokalHomeMessages(const [], now: at)).subheader,
+                ),
+                key: ValueKey(greeting),
+                style: TextStyle(
+                  fontSize: context.responsiveText(15),
+                  color: context.lokal.muted,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -579,10 +588,16 @@ class KonnektedSongShelf extends StatelessWidget {
     required this.onSeeAll,
     required this.onRetry,
     required this.onPlay,
+    this.showTotalDuration = false,
+    this.summarySongs,
   });
 
   final String title;
   final AsyncValue<List<Song>> songs;
+  final bool showTotalDuration;
+
+  /// Optional full list for metadata when the shelf displays only 12 tracks.
+  final AsyncValue<List<Song>>? summarySongs;
   final String emptyTitle;
   final String emptyMessage;
   final VoidCallback onSeeAll;
@@ -593,7 +608,13 @@ class KonnektedSongShelf extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      KonnektedSectionHeading(title: title, onSeeAll: onSeeAll),
+      KonnektedSectionHeading(
+        title: title,
+        onSeeAll: onSeeAll,
+        subtitle: showTotalDuration && (summarySongs ?? songs).value != null
+            ? '${lokalSongCount((summarySongs ?? songs).value!.length)} · ${lokalRunningTime((summarySongs ?? songs).value!)}'
+            : null,
+      ),
       songs.when(
         skipLoadingOnReload: true,
         skipError: true,
@@ -790,42 +811,99 @@ class _MixCard extends StatelessWidget {
       onPlay(mix.tracks.first, mix.tracks);
     }
 
-    return Semantics(
-      button: true,
-      label: lokalText(
-        "Play {arg0}, {arg1} songs",
-        args: {'arg0': mix.title, 'arg1': mix.tracks.length},
-      ),
-      excludeSemantics: true,
+    return InkWell(
       onTap: play,
-      child: InkWell(
-        onTap: play,
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            button: true,
+            label: lokalText(
+              "Play {arg0}, {arg1} songs",
+              args: {'arg0': mix.title, 'arg1': mix.tracks.length},
+            ),
+            child: AspectRatio(
               aspectRatio: 1,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: KonnektedMixArt(songs: mix.tracks),
               ),
             ),
-            const SizedBox(height: 10),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => pushLokalPage(context, LokalMixPage(mix: mix)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mix.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 18),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            lokalText("{arg0} songs", args: {'arg0': mix.tracks.length}),
+            style: TextStyle(fontSize: 12, color: t.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Your Mixes are browsable playlists; tapping the collage still plays.
+class LokalMixPage extends ConsumerWidget {
+  const LokalMixPage({super.key, required this.mix});
+  final LokalMix mix;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final width = MediaQuery.sizeOf(context).width;
+    return LokalLibraryPage(
+      title: mix.title,
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          children: [
+            SizedBox.square(
+              dimension: (width * .55).clamp(156.0, 300.0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: KonnektedMixArt(songs: mix.tracks),
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
               mix.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 2),
-            Text(
-              lokalText("{arg0} songs", args: {'arg0': mix.tracks.length}),
-              style: TextStyle(fontSize: 12, color: t.muted),
-            ),
+            Text(lokalSongCount(mix.tracks.length)),
           ],
         ),
       ),
+      slivers: [
+        LokalSongBrowser(
+          songs: mix.tracks,
+          initialSort: LokalSongSort.original,
+          originalLabel: lokalText('Mix order'),
+          searchHint: lokalText('Search in mix'),
+        ),
+      ],
     );
   }
 }

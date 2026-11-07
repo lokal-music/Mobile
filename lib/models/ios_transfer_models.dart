@@ -359,12 +359,17 @@ class IosTransferJob {
     this.receivedSha256,
     this.resultOriginalId,
     this.lastFailure,
+    this.uploadProtocolVersion,
+    this.uploadRequeueAuthorized = false,
+    this.uploadBindingRetired = false,
   });
   final IosTransferIntent intent;
   final int revision, updatedMs;
   final IosTransferPhase phase;
   final String direction;
   final int? receivedBytes;
+  final int? uploadProtocolVersion;
+  final bool uploadRequeueAuthorized, uploadBindingRetired;
   final String? receivedSha256, resultOriginalId, lastFailure;
   String get id => intent.id;
 
@@ -387,6 +392,9 @@ class IosTransferJob {
       'responseBytes',
       'responseSHA256',
       'lastFailure',
+      'uploadProtocolVersion',
+      'uploadRequeueAuthorized',
+      'uploadBindingRetired',
     });
     final intent = _intent(json);
     final phase = IosTransferPhase.values
@@ -466,6 +474,29 @@ class IosTransferJob {
         }.contains(phase)) {
       _invalid();
     }
+    final uploadProtocolVersion = _optionalInteger(
+      json['uploadProtocolVersion'],
+      minimum: 1,
+      maximum: 1,
+    );
+    if (uploadProtocolVersion != null && json['direction'] != 'upload')
+      _invalid();
+    bool nativeDecision(String key) {
+      final value = json[key];
+      if (value == null) return false;
+      if (value != true ||
+          json['direction'] != 'upload' ||
+          !{
+            IosTransferPhase.complete,
+            IosTransferPhase.cancelled,
+          }.contains(phase))
+        _invalid();
+      return true;
+    }
+
+    final requeue = nativeDecision('uploadRequeueAuthorized');
+    final retired = nativeDecision('uploadBindingRetired');
+    if (requeue && (uploadProtocolVersion != 1 || !retired)) _invalid();
     final originalId = json['resultOriginalID'] == null
         ? null
         : _stable(json['resultOriginalID']);
@@ -497,6 +528,9 @@ class IosTransferJob {
       receivedSha256: hash,
       resultOriginalId: originalId,
       lastFailure: failure,
+      uploadProtocolVersion: uploadProtocolVersion,
+      uploadRequeueAuthorized: requeue,
+      uploadBindingRetired: retired,
     );
   }
 }

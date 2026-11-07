@@ -134,6 +134,20 @@ class DiscoveryArtworkResolver {
     if (_cache[id]?.image.isEmpty == true) _cache.remove(id);
   }
 
+  /// The cover already resolved for a visible Search thumbnail, without
+  /// starting another metadata request. Playback can use this synchronously
+  /// when constructing its queue so cover art is present from the first frame.
+  /// Misses and expired hits are not promoted to playback artwork.
+  String cachedArtwork(DiscoveryArtworkRequest request) {
+    if (!request.isComplete) return '';
+    final cached = _cache[request.cacheKey];
+    if (cached == null || cached.image.isEmpty ||
+        _now().difference(cached.at) >= hitLifetime) {
+      return '';
+    }
+    return cached.image;
+  }
+
   Future<String> resolve(DiscoveryArtworkRequest request) {
     if (!request.isComplete) return Future.value('');
     final id = request.cacheKey;
@@ -176,10 +190,19 @@ class DiscoveryArtworkResolver {
     }
   }
 
-  Future<List<Map>> _rows(Uri url, String field) async {
+  Future<List<Map>> _rows(Uri url, String field) async =>
+      (await _rowsWithStatus(url, field)).rows;
+
+  /// A successful empty search differs from a timeout or unavailable provider:
+  /// only the latter should stop trying additional artist credits.
+  Future<({List<Map> rows, bool failed})> _rowsWithStatus(
+    Uri url, String field,
+  ) async {
     try {
-      final data = (await _http.json(url))[field];
-      return data is List ? data.whereType<Map>().toList() : const [];
+      final data = (await _http.json(url)
+          .timeout(const Duration(seconds: 5)))[field];
+      return (rows: data is List ? data.whereType<Map>().toList() : <Map>[],
+          failed: false);
     } catch (error) {
       final failure = error.toString();
       onSourceFailure?.call(
@@ -192,7 +215,7 @@ class DiscoveryArtworkResolver {
             ? 'timed out'
             : 'request failed',
       );
-      return const [];
+      return (rows: <Map>[], failed: true);
     }
   }
 
@@ -281,6 +304,37 @@ class DiscoveryArtworkResolver {
           matchingArtist(nameOf(row['artist'])) &&
           cover.isNotEmpty) {
         return cover;
+      }
+    }
+
+    // Desktop can resolve album artwork under the album/primary artist when
+    // a track credits a featured performer first. Try one additional credited
+    // artist only after the strict first lookup fails, and still require an
+    // exact album/title match. Never accept the first unrelated search hit.
+    // Do not treat production/remix roles as alternate release owners.
+    // Such credits are intentionally parseable for navigation, but they
+    // must not authorize album cover replacements from another producer.
+    final hasProductionCredit = RegExp(
+      r'\b(?:prod(?:uced)?\.?|remix(?:ed)?|instrumental by)\b',
+      caseSensitive: false,
+    ).hasMatch(request.artist);
+    if (album && !hasProductionCredit) {
+      final credits = splitArtistCredits(request.artist);
+      for (final credit in credits.skip(1).take(2)) {
+        final alternate = await _rowsWithStatus(
+          Uri.https('api.deezer.com', '/search/album', {
+            'q': 'artist:"$credit" album:"${request.title}"',
+            'limit': '15',
+          }),
+          'data',
+        );
+        if (alternate.failed) break;
+        for (final row in alternate.rows) {
+          if (!matchingTitle(row['title']) ||
+              !same(nameOf(row['artist']), credit)) continue;
+          final cover = first([row['cover_xl'], row['cover_big']]);
+          if (cover.isNotEmpty) return cover;
+        }
       }
     }
 
@@ -525,16 +579,49 @@ DiscoveryArtworkResolver createDiscoveryArtworkResolver(
   );
 }
 
-/// One resolver for the app's lifetime, so its cache survives Home rebuilds.
-final discoveryArtworkResolverProvider = Provider<DiscoveryArtworkResolver>((
-  ref,
-) {
-  final client = GracefulHttpClient();
-  ref.onDispose(client.close);
-  return createDiscoveryArtworkResolver(
-    DiscoveryHttp(client, timeout: const Duration(seconds: 4)),
-  );
-});
+/// Shared by search-result covers and playback. In particular, an HTTP
+/// add-on's audio result may omit artworkURL (the field is optional in the
+/// LastWave protocol); reuse the existing exact-match Deezer / Apple Music /
+/// YouTube Music lookups rather than adding another metadata API.
+final DiscoveryArtworkResolver sharedDiscoveryArtworkResolver =
+    createDiscoveryArtworkResolver(
+  DiscoveryHttp(GracefulHttpClient(), timeout: const Duration(seconds: 4)),
+);
+
+/// Missing add-on artwork must never prevent a track from playing. A bounded,
+/// cached metadata lookup changes only its cover, not the selected stream.
+Future<DiscoveryTrack> resolveMissingAddonArtwork(
+  DiscoveryTrack track, {
+  DiscoveryArtworkResolver? resolver,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  if (track.source != DiscoverySource.addon ||
+      track.artwork?.isNotEmpty == true ||
+      track.title.trim().isEmpty ||
+      track.artist.trim().isEmpty ||
+      track.artist == 'Artist not supplied') {
+    return track;
+  }
+  try {
+    final found = await (resolver ?? sharedDiscoveryArtworkResolver)
+        .resolve(DiscoveryArtworkRequest(
+          kind: DiscoveryArtworkKind.track,
+          title: track.title,
+          artist: track.artist,
+        ))
+        .timeout(timeout, onTimeout: () => '');
+    final cover = discoveryImageUrl(found);
+    return cover.isEmpty ? track : track.withArtwork(cover);
+  } catch (_) {
+    return track;
+  }
+}
+
+/// One resolver for the app's lifetime, so cached search thumbnails can also
+/// be reused for playback without issuing a second lookup.
+final discoveryArtworkResolverProvider = Provider<DiscoveryArtworkResolver>(
+  (ref) => sharedDiscoveryArtworkResolver,
+);
 
 final discoveryLocalArtworkProvider =
     Provider.autoDispose<DiscoveryLocalArtwork>((ref) {
@@ -556,12 +643,14 @@ class DiscoveryArtwork extends StatelessWidget {
     required this.placeholder,
     this.width,
     this.height,
+    this.revealOnLoad = false,
   });
 
   final DiscoveryArtworkKind kind;
   final String title;
   final String artist;
   final String url;
+  final bool revealOnLoad;
   final Widget placeholder;
   final double? width;
   final double? height;
@@ -579,12 +668,14 @@ class DiscoveryArtwork extends StatelessWidget {
       placeholder: placeholder,
       width: width,
       height: height,
+      revealOnLoad: revealOnLoad,
     );
     if (image.isEmpty) return fallback;
     return CachedImageWidget(
       imagePath: image,
       width: width,
       height: height,
+      revealOnLoad: revealOnLoad,
       placeholder: placeholder,
       errorWidget: fallback,
     );
@@ -598,6 +689,7 @@ class _DiscoveryArtworkFallback extends ConsumerStatefulWidget {
     this.width,
     this.height,
     this.skipLocal = false,
+    this.revealOnLoad = false,
   });
 
   final DiscoveryArtworkRequest request;
@@ -605,6 +697,7 @@ class _DiscoveryArtworkFallback extends ConsumerStatefulWidget {
   final double? width;
   final double? height;
   final bool skipLocal;
+  final bool revealOnLoad;
 
   @override
   ConsumerState<_DiscoveryArtworkFallback> createState() =>
@@ -625,6 +718,7 @@ class _DiscoveryArtworkFallbackState
     imagePath: path,
     width: widget.width,
     height: widget.height,
+    revealOnLoad: widget.revealOnLoad,
     placeholder: widget.placeholder,
     errorWidget: onError,
   );
@@ -650,6 +744,7 @@ class _DiscoveryArtworkFallbackState
             width: widget.width,
             height: widget.height,
             skipLocal: true,
+            revealOnLoad: widget.revealOnLoad,
           ),
         );
       }
@@ -665,6 +760,7 @@ class _DiscoveryArtworkFallbackState
             width: widget.width,
             height: widget.height,
             skipLocal: true,
+            revealOnLoad: widget.revealOnLoad,
           ),
         );
       }

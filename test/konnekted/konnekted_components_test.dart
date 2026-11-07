@@ -1,4 +1,5 @@
 import 'package:flick/features/konnekted/lokal_home_greeting.dart';
+import 'package:flick/core/theme/lokal_appearance.dart';
 import 'package:flick/core/theme/lokal_theme.dart';
 import 'package:flick/core/theme/lokal_tokens.dart';
 import 'package:flick/features/konnekted/konnekted_data.dart';
@@ -15,6 +16,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _song = Song(
   id: 'test-track',
@@ -199,6 +201,82 @@ void main() {
     expect(greeting.top, greaterThan(mode.bottom));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'Appearance hides both Home greeting lines without leaving a gap in any mode',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view
+        ..physicalSize = const Size(393, 852)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      var selected = KonnektedHomeTab.local;
+      await tester.pumpWidget(
+        _app(
+          SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, rebuild) => KonnektedHomeTopBar(
+                onSettings: () {},
+                onAppearance: () {},
+                selectedTab: selected,
+                onTabChanged: (tab) => rebuild(() => selected = tab),
+                greeting: const LokalHomeMessages(
+                  'Header greeting',
+                  'Listening now',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final expandedHeight = tester
+          .getSize(find.byType(KonnektedHomeTopBar))
+          .height;
+      expect(find.text('Header greeting'), findsOneWidget);
+      expect(find.text('Listening now'), findsOneWidget);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(KonnektedHomeTopBar)),
+      );
+      await container
+          .read(lokalAppearanceProvider.notifier)
+          .setShowHomeGreeting(false);
+      await tester.pumpAndSettle();
+      expect(find.text('Header greeting'), findsNothing);
+      expect(find.text('Listening now'), findsNothing);
+      final compactHeight = tester
+          .getSize(find.byType(KonnektedHomeTopBar))
+          .height;
+      expect(expandedHeight - compactHeight, greaterThan(40));
+
+      for (final tab in KonnektedHomeTab.values) {
+        await tester.tap(find.bySemanticsLabel(tab.label));
+        await tester.pumpAndSettle();
+        expect(selected, tab);
+        expect(find.text('Header greeting'), findsNothing);
+        expect(find.text('Listening now'), findsNothing);
+        expect(
+          tester.getSize(find.byType(KonnektedHomeTopBar)).height,
+          compactHeight,
+        );
+        expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+      }
+
+      await container
+          .read(lokalAppearanceProvider.notifier)
+          .setShowHomeGreeting(true);
+      await tester.pumpAndSettle();
+      expect(find.text('Header greeting'), findsOneWidget);
+      expect(find.text('Listening now'), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(KonnektedHomeTopBar)).height,
+        expandedHeight,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('Compact header reveals selected mode without shrinking tabs', (
     tester,
@@ -419,9 +497,14 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(find.text('Most Played'));
+    final artwork = find.byWidgetPredicate(
+      (widget) =>
+          widget is KonnektedMixArt &&
+          widget.songs.first.id == mixes[2].tracks.first.id,
+    );
+    await tester.ensureVisible(artwork);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Most Played'));
+    await tester.tap(artwork);
     expect(played.last.$1, mixes[2].tracks.first);
     expect(played.last.$2, mixes[2].tracks);
     expect(find.text('4 songs'), findsNWidgets(3));
@@ -469,9 +552,9 @@ void main() {
         findsOneWidget,
       ); // The shelf starts in the middle.
       final stage = find.bySemanticsLabel(RegExp('^Cover Flow'));
-      await tester.tapAt(tester.getCenter(stage) + const Offset(150, 0));
+      await tester.tapAt(tester.getCenter(stage));
       await tester.pumpAndSettle();
-      expect(played?.id, 'r3');
+      expect(played?.id, 'r2');
       expect(queue?.map((s) => s.id), ['r1', 'r2', 'r3']);
       expect(tester.takeException(), isNull);
     },
@@ -1015,9 +1098,10 @@ void main() {
       tester.getSize(find.byType(KonnektedDock)).height,
       lessThan(openHeight),
     );
-    // The hidden tabs leave the semantics tree; the shrunken capsule stays.
-    expect(find.bySemanticsLabel('Home'), findsNothing);
-    expect(find.byTooltip('Open queue'), findsNothing);
+    // Hidden controls remain mounted for an uninterrupted reverse spring,
+    // but leave the semantics tree and cannot intercept taps.
+    expect(find.bySemanticsLabel('Home'), findsOneWidget);
+    expect(find.bySemanticsLabel('Open queue'), findsNothing);
     expect(find.bySemanticsLabel(RegExp('Open player for')), findsOneWidget);
     expect(find.bySemanticsLabel('Search'), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Show tabs. Library'));
